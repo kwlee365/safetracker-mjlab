@@ -7,7 +7,6 @@ MUJOCO_LOG.TXT
 debug.py
 .vscode/
 *.ipynb_checkpoints/
-motions/
 *_rerun*
 artifacts/
 .venv/
