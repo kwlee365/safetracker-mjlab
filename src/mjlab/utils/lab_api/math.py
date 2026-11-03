@@ -1718,15 +1718,16 @@ def quat_slerp(q1: torch.Tensor, q2: torch.Tensor, tau: float) -> torch.Tensor:
     elif tau == 1.0:
         return q2
     d = torch.dot(q1, q2)
-    if abs(abs(d) - 1.0) < torch.finfo(q1.dtype).eps * 4.0:
-        return q1
     if d < 0.0:
         # Invert rotation
         d = -d
-        q2 *= -1.0
+        q2 = -q2
+    if 1.0 - d < torch.finfo(q1.dtype).eps * 4.0:
+        # sin(angle) is too small to divide by. Normalized linear interpolation
+        # is accurate for rotations this close.
+        q = (1.0 - tau) * q1 + tau * q2
+        return q / torch.linalg.norm(q)
     angle = torch.acos(torch.clamp(d, -1, 1))
-    if abs(angle) < torch.finfo(q1.dtype).eps * 4.0:
-        return q1
     isin = 1.0 / torch.sin(angle)
     q1 = q1 * torch.sin((1.0 - tau) * angle) * isin
     q2 = q2 * torch.sin(tau * angle) * isin

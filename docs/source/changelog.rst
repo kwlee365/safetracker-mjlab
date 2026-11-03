@@ -23,6 +23,14 @@ Added
   fields to the exported ONNX metadata by overriding it, and
   ``MjlabOnPolicyRunner.export_onnx_on_save`` to export ONNX on every checkpoint.
   The velocity, manipulation and tracking runners now share this export path.
+- Added the ``Mjlab-HuB-Teacher-Unitree-G1`` task, the privileged PPO teacher of
+  HuB (extreme humanoid balance) with localized tracking, balance shaping rewards,
+  high-frequency pushes grown by a curriculum, torque RFI and control delay.
+- Added ``mjlab.tasks.hub.scripts.refine_motion``, which applies the HuB reference
+  motion refinement (grounded foot correction, COM filtering and transition
+  stabilization) to G1 motions from HuB/PHC pickles or mjlab CSVs.
+- ``csv_to_npz`` accepts ``--output-file`` to save the npz locally instead of
+  uploading it to W&B.
 
 Changed
 ^^^^^^^
@@ -49,6 +57,10 @@ Changed
 Fixed
 ^^^^^
 
+- ``quat_slerp`` now interpolates rotations less than about 2 mrad apart instead of
+  returning the first quaternion, and no longer negates its second argument in
+  place. ``csv_to_npz`` produced stair-stepped root orientations for slowly
+  rotating motions, which made the support foot of the reference slide.
 - ``posture`` and ``variable_posture`` now pair each joint with its own ``std`` when
   ``asset_cfg.preserve_order=True``.
 - ``apply_body_impulse`` now applies ``body_point_offset`` in the body frame, as

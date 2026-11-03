@@ -1,4 +1,5 @@
 import math
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -195,6 +196,7 @@ def run_sim(
   render,
   line_range,
   renderer: OffscreenRenderer | None = None,
+  output_file: str | None = None,
 ):
   motion = MotionLoader(
     motion_file=input_file,
@@ -309,6 +311,17 @@ def run_sim(
         ):
           log[k] = np.stack(log[k], axis=0)
 
+        if output_file is not None:
+          print(f"Saving to {output_file}...")
+          np.savez(output_file, **log)
+          if render:
+            import mediapy as media
+
+            video_file = Path(output_file).with_suffix(".mp4")
+            print(f"Saving video to {video_file}...")
+            media.write_video(video_file, frames, fps=output_fps)
+          break
+
         print("Saving to /tmp/motion.npz...")
         np.savez("/tmp/motion.npz", **log)
 
@@ -342,24 +355,28 @@ def run_sim(
 
 def main(
   input_file: str,
-  output_name: str,
+  output_name: str | None = None,
   input_fps: float = 30.0,
   output_fps: float = 50.0,
   device: str = "cuda:0",
   render: bool = False,
   line_range: tuple[int, int] | None = None,
+  output_file: str | None = None,
 ):
   """Replay motion from CSV file and output to npz file.
 
   Args:
     input_file: Path to the input CSV file.
-    output_name: Path to the output npz file.
+    output_name: Name of the W&B registry artifact to upload the npz file to.
     input_fps: Frame rate of the CSV file.
     output_fps: Desired output frame rate.
     device: Device to use.
     render: Whether to render the simulation and save a video.
     line_range: Range of lines to process from the CSV file.
+    output_file: Save the npz file (and video) here instead of uploading to W&B.
   """
+  if output_name is None and output_file is None:
+    raise ValueError("Pass --output-name to upload to W&B or --output-file.")
   if device.startswith("cuda") and not torch.cuda.is_available():
     print("[WARNING]: CUDA is not available. Falling back to CPU. This may be slow.")
     device = "cpu"
@@ -433,6 +450,7 @@ def main(
     render=render,
     line_range=line_range,
     renderer=renderer,
+    output_file=output_file,
   )
 
 

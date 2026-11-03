@@ -4,7 +4,12 @@ import pytest
 import torch
 from conftest import get_test_device
 
-from mjlab.utils.lab_api.math import apply_delta_pose, sample_gaussian
+from mjlab.utils.lab_api.math import (
+  apply_delta_pose,
+  quat_from_angle_axis,
+  quat_slerp,
+  sample_gaussian,
+)
 
 
 @pytest.fixture
@@ -24,6 +29,21 @@ def test_apply_delta_pose_zero_rotation_is_finite_and_identity(device):
   assert torch.isfinite(target_rot).all()
   assert torch.allclose(target_pos, source_pos)
   assert torch.allclose(target_rot, source_rot)
+
+
+@pytest.mark.parametrize("angle", [1e-3, 0.5])
+def test_quat_slerp_interpolates_small_rotations(device, angle):
+  """Rotations too close for the sin(angle) division must still interpolate."""
+  axis = torch.tensor([0.0, 0.6, 0.8], device=device)
+  q1 = torch.tensor([1.0, 0.0, 0.0, 0.0], device=device)
+  q2 = quat_from_angle_axis(torch.tensor(angle, device=device), axis)
+  # Same rotation as q2 with the opposite sign; it must not be modified.
+  q2_neg = -q2
+
+  expected = quat_from_angle_axis(torch.tensor(0.25 * angle, device=device), axis)
+  torch.testing.assert_close(quat_slerp(q1, q2, 0.25), expected)
+  torch.testing.assert_close(quat_slerp(q1, q2_neg, 0.25), expected)
+  torch.testing.assert_close(q2_neg, -q2)
 
 
 # sample_gaussian.
