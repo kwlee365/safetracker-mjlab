@@ -26,9 +26,13 @@ Added
 - Added the ``Mjlab-HuB-Teacher-Unitree-G1`` task, the privileged PPO teacher of
   HuB (extreme humanoid balance) with localized tracking, balance shaping rewards,
   high-frequency pushes grown by a curriculum, torque RFI and control delay.
+  Episodes end with the reference motion instead of looping it, so the robot is
+  never teleported mid-episode.
 - Added ``mjlab.tasks.hub.scripts.refine_motion``, which applies the HuB reference
   motion refinement (grounded foot correction, COM filtering and transition
-  stabilization) to G1 motions from HuB/PHC pickles or mjlab CSVs.
+  stabilization) to G1 motions from HuB/PHC pickles or mjlab CSVs. It also levels
+  the soles of feet on or near the ground, which retargeted clips often leave
+  tilted, and grounds every frame.
 - ``csv_to_npz`` accepts ``--output-file`` to save the npz locally instead of
   uploading it to W&B.
 

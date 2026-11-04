@@ -287,6 +287,8 @@ def make_hub_teacher_env_cfg() -> ManagerBasedRlEnvCfg:
 
   terminations: dict[str, TerminationTermCfg] = {
     "time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),
+    # Episodes end with the motion instead of looping it (see HubMotionCommand).
+    "motion_end": TerminationTermCfg(func=mdp.motion_end, params=motion, time_out=True),
     "tracking_error": TerminationTermCfg(
       func=mdp.bad_mean_body_pos,
       params={**motion, "threshold": 0.5, "body_names": None},
@@ -298,12 +300,13 @@ def make_hub_teacher_env_cfg() -> ManagerBasedRlEnvCfg:
   ##
 
   # Pushes start at 0.1 m/s (HuB's evaluation push) and grow to the 0.5 m/s of
-  # push_robot while episodes last at least half of the maximum length.
+  # push_robot while the robot survives at least half of the motion it had left.
   curriculum: dict[str, CurriculumTermCfg] = {
     "push": CurriculumTermCfg(
       func=mdp.push_curriculum,
       params={
         "event_name": "push_robot",
+        **motion,
         "initial_scale": 0.2,
         "scale_step": 0.1,
         "promote_ratio": 0.5,
@@ -345,5 +348,7 @@ def make_hub_teacher_env_cfg() -> ManagerBasedRlEnvCfg:
       ),
     ),
     decimation=4,
-    episode_length_s=10.0,
+    # Longer than the HuB clips (up to 27 s refined), so an episode can play a
+    # whole clip and ends at its last frame (motion_end).
+    episode_length_s=30.0,
   )

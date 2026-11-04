@@ -13,6 +13,7 @@ from mjlab.tasks.hub.scripts.refine_motion import (
   G1_JOINT_NAMES,
   G1Kinematics,
   Motion,
+  foot_tilt,
   load_motion_pkl,
   refine_motion,
   support_labels,
@@ -112,3 +113,36 @@ def test_refine_motion_pins_support_foot_grounds_and_pads() -> None:
   np.testing.assert_allclose(left_ankle_xy, left_ankle_xy[:1].repeat(30, 0))
   np.testing.assert_allclose(kin.sole_height.min(axis=1), 0.0, atol=1e-9)
   np.testing.assert_allclose(refined.root_pos[0, :2], 0.0, atol=1e-12)
+
+
+def test_refine_motion_levels_feet_on_the_ground_only() -> None:
+  # Stand on pitched and rolled feet for 10 frames, then lift the right leg
+  # high with the same ankle angles for 10 frames.
+  num_frames = 20
+  joint_pos = np.zeros((num_frames, len(G1_JOINT_NAMES)))
+  right_ankle = [
+    G1_JOINT_NAMES.index(f"right_ankle_{name}_joint") for name in ("pitch", "roll")
+  ]
+  for side in ("left", "right"):
+    joint_pos[:, G1_JOINT_NAMES.index(f"{side}_ankle_pitch_joint")] = 0.2
+    joint_pos[:, G1_JOINT_NAMES.index(f"{side}_ankle_roll_joint")] = 0.15
+  joint_pos[10:, G1_JOINT_NAMES.index("right_hip_pitch_joint")] = -1.2
+  joint_pos[10:, G1_JOINT_NAMES.index("right_knee_joint")] = 1.5
+  root_pos = np.tile([0.0, 0.0, 0.85], (num_frames, 1))
+  root_quat = np.tile([1.0, 0.0, 0.0, 0.0], (num_frames, 1))
+  motion = Motion(root_pos, root_quat, joint_pos, fps=30.0)
+
+  kinematics = G1Kinematics()
+  refined, report = refine_motion(motion, kinematics, pad=False)
+
+  assert report.tilt_before > 10.0
+  assert report.tilt_after < 0.1
+  kin = kinematics(refined)
+  tilt = foot_tilt(kin)
+  np.testing.assert_allclose(tilt[:10], 0.0, atol=0.1)  # Both standing feet.
+  np.testing.assert_allclose(tilt[10:, 0], 0.0, atol=0.1)  # The support foot.
+  # The lifted foot keeps its reference orientation.
+  np.testing.assert_array_equal(
+    refined.joint_pos[10:, right_ankle], motion.joint_pos[10:, right_ankle]
+  )
+  np.testing.assert_allclose(kin.sole_height.min(axis=1), 0.0, atol=1e-9)

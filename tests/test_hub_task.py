@@ -86,12 +86,42 @@ def test_hub_teacher_observations_contacts_and_torque_noise(motion_file, device)
   env.close()
 
 
-def test_push_curriculum_follows_episode_length():
+def test_motion_end_times_out_instead_of_looping(motion_file, device):
+  cfg = load_env_cfg(TASK_ID)
+  cfg.scene.num_envs = 2
+  motion_cmd = cfg.commands["motion"]
+  assert isinstance(motion_cmd, HubMotionCommandCfg)
+  motion_cmd.motion_file = motion_file
+  env = ManagerBasedRlEnv(cfg, device=device)
+  env.reset()
+  command = env.command_manager.get_term("motion")
+  assert isinstance(command, HubMotionCommand)
+  last = command.motion.time_step_total - 1
+  action = torch.zeros(2, env.action_manager.total_action_dim, device=env.device)
+
+  # The motion advances to its last frame and holds there instead of wrapping.
+  command.time_steps[:] = last - 1
+  _, _, terminated, time_outs, _ = env.step(action)
+  assert not (terminated | time_outs).any()
+  assert command.time_steps.tolist() == [last, last]
+
+  # The last frame ends the episode as a time-out.
+  _, _, terminated, time_outs, _ = env.step(action)
+  assert time_outs.all() and not terminated.any()
+  assert env.episode_length_buf.tolist() == [0, 0]
+  env.close()
+
+
+def test_push_curriculum_follows_survival():
   push_cfg = Mock(params={"velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}})
-  env = Mock(max_episode_length=500, common_step_counter=0)
+  env = Mock(max_episode_length=1500, common_step_counter=0)
   env.event_manager.get_term_cfg.return_value = push_cfg
+  command = Mock()
+  command.motion.time_step_total = 1001
+  env.command_manager.get_term.return_value = command
   params: dict[str, Any] = {
     "event_name": "push_robot",
+    "command_name": "motion",
     "initial_scale": 0.2,
     "scale_step": 0.1,
     "promote_ratio": 0.5,
@@ -101,18 +131,23 @@ def test_push_curriculum_follows_episode_length():
   term = push_curriculum(Mock(params=params), env)
   env_ids = torch.arange(4)
 
-  def end_episodes(step: int, length: int) -> tuple[float, float]:
+  def end_episodes(step: int, length: int, frame: int) -> tuple[float, float]:
     env.common_step_counter = step
     env.episode_length_buf = torch.full((4,), length)
+    command.time_steps = torch.full((4,), frame)
     term(env, env_ids, **params)
     return push_cfg.params["velocity_range"]["x"]
 
   assert push_cfg.params["velocity_range"]["x"] == pytest.approx((-0.1, 0.1))
-  assert end_episodes(10, 400) == pytest.approx((-0.15, 0.15))
-  assert end_episodes(20, 50) == pytest.approx((-0.1, 0.1))
-  assert end_episodes(30, 50) == pytest.approx((-0.1, 0.1))  # Floor.
-  for step in range(40, 200, 10):
-    end_episodes(step, 400)
+  # 400 of 500 steps survived: promote.
+  assert end_episodes(10, 400, 900) == pytest.approx((-0.15, 0.15))
+  # A fall 50 steps in with 500 frames left: demote, down to the floor.
+  assert end_episodes(20, 50, 500) == pytest.approx((-0.1, 0.1))
+  assert end_episodes(30, 50, 500) == pytest.approx((-0.1, 0.1))
+  # A short episode that started late and reached the motion end survived.
+  assert end_episodes(40, 30, 1000) == pytest.approx((-0.15, 0.15))
+  for step in range(50, 200, 10):
+    end_episodes(step, 30, 1000)
   assert push_cfg.params["velocity_range"]["x"] == pytest.approx((-0.5, 0.5))
 
 

@@ -26,3 +26,9 @@ def bad_mean_body_pos(
     dim=-1,
   )
   return error.mean(dim=-1) > threshold
+
+
+def motion_end(env: ManagerBasedRlEnv, command_name: str) -> torch.Tensor:
+  """True on the last frame of the reference motion. Use with ``time_out=True``."""
+  command = cast(MotionCommand, env.command_manager.get_term(command_name))
+  return command.time_steps >= command.motion.time_step_total - 1

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -30,10 +31,21 @@ class HubMotionCommand(MotionCommand):
     motion reference offset randomization. It does not move the reset state.
   - Reference foot contacts: both feet are grounded when their heights differ by
     less than ``contact_height_threshold``, otherwise only the lower foot is.
+  - The motion does not loop. :class:`MotionCommand` restarts it from a
+    resampled frame when it ends, which teleports the robot mid-episode. Here
+    the last frame is held and the ``motion_end`` termination ends the episode
+    as a time-out.
   """
 
   def __init__(self, cfg: HubMotionCommandCfg, env: ManagerBasedRlEnv):
     super().__init__(cfg, env)
+    if self.motion.time_step_total > env.max_episode_length:
+      warnings.warn(
+        f"The motion lasts {self.motion.time_step_total * env.step_dt:.1f} s but "
+        f"episodes {env.max_episode_length_s:.1f} s, so episodes that start early "
+        "time out before the motion ends. Raise --env.episode-length-s.",
+        stacklevel=2,
+      )
     self.foot_indexes = [cfg.body_names.index(name) for name in cfg.foot_body_names]
     self.contact_height_threshold = cfg.contact_height_threshold
     self._reference_offset_range = torch.tensor(
@@ -77,6 +89,14 @@ class HubMotionCommand(MotionCommand):
     delta_yaw = delta_yaw[:, None, :].expand(-1, len(self.cfg.body_names), -1)
     self.body_lin_vel_relative_w = quat_apply(delta_yaw, self.body_lin_vel_w)
     self.body_ang_vel_relative_w = quat_apply(delta_yaw, self.body_ang_vel_w)
+
+  def _update_command(self, env_ids: torch.Tensor | None = None):
+    # The base class advances one frame and resamples envs past the end. Capping
+    # below the last frame first makes it stop there instead.
+    rows = slice(None) if env_ids is None else env_ids
+    last = self.motion.time_step_total - 1
+    self.time_steps[rows] = self.time_steps[rows].clamp(max=last - 1)
+    super()._update_command(env_ids)
 
   def _resample_command(self, env_ids: torch.Tensor):
     super()._resample_command(env_ids)
